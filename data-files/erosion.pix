@@ -1,0 +1,164 @@
+#version 330
+
+uniform vec2 bounds;
+
+uniform sampler2D prevSample;
+uniform sampler2D prevFlux;
+uniform sampler2D prevVelocity;
+
+uniform int gridSize;
+uniform int gridFaceNum;
+uniform float timeTick;
+
+uniform int screenHeight;
+uniform int screenWidth;
+
+// constants from user
+uniform float kc;
+uniform float ks;
+uniform float kd;
+
+// color attachment locations for output values
+layout(location = 1) out vec4 endHeight;
+layout(location = 2) out vec4 endFlux;
+layout(location = 3) out vec4 endVelocity;
+
+// returns a vec4 of neighboring heights (L,R,T,B)
+vec4 getNeighboringWaterHeights(vec2 texCoords)
+{
+	float gridFaceNumFl = float(gridFaceNum);
+	// float screenWfl = float(screenWidth);
+
+	float xIncr = 1.0 / gridFaceNumFl;
+	float yIncr = 1.0 / gridFaceNumFl;
+
+	float left;
+	if (texCoords.x < xIncr) {
+		left = texture(prevSample, texCoords, 0.0).x;
+	} else {
+		left = texture(prevSample, vec2(texCoords.x - xIncr, texCoords.y), 0.0).x;
+	}
+
+	float right;
+	if (texCoords.x > (1.0 - xIncr)) {
+		right = texture(prevSample, texCoords, 0.0).x;
+	} else {
+		right = texture(prevSample, vec2(texCoords.x + xIncr, texCoords.y), 0.0).x;
+	}
+
+	float top;
+	if (texCoords.y < yIncr) {
+		top = texture(prevSample, texCoords, 0.0).x;
+	} else {
+		top = texture(prevSample, vec2(texCoords.x, texCoords.y - yIncr), 0.0).x;
+	}
+
+	float bottom;
+	if (texCoords.y > (1.0 - yIncr)) {
+		bottom = texture(prevSample, texCoords, 0.0).x;
+	} else {
+		bottom = texture(prevSample, vec2(texCoords.x, texCoords.y + yIncr), 0.0).x;
+	}
+
+	return vec4(left, right, top, bottom);
+}
+
+float getHeightDif(vec2 texCoords, float terrainHeight)
+{
+	vec4 nHts = getNeighboringWaterHeights(texCoords);
+
+	float highestPt = nHts.x;
+	float lowestPt = nHts.x;
+
+	// find highest point
+	if (nHts.y > highestPt) {
+		highestPt = nHts.y;
+	}
+	if (nHts.z > highestPt) {
+		highestPt = nHts.z;
+	}
+	if (nHts.w > highestPt) {
+		highestPt = nHts.w;
+	}
+
+	// find lowest pt
+	if (nHts.y < lowestPt) {
+		lowestPt = nHts.y;
+	}
+	if (nHts.z < lowestPt) {
+		lowestPt = nHts.z;
+	}
+	if (nHts.w < lowestPt) {
+		lowestPt = nHts.w;
+	}
+
+	// option : clamp value
+	return highestPt - lowestPt;
+}
+
+// returns stc
+// the higher stc is, the more erosion takes place
+float getSedimentTransportCapacity(vec2 velocity, float terrainHeight, vec2 texCoords)
+{
+
+	float heightDif = getHeightDif(texCoords, terrainHeight);
+
+	return kc * heightDif * length(velocity);
+}
+
+float updateTerrainHeight(float stc, float terrainHeight, float sedimentAmount)
+{
+
+	float terrainHeight2;
+	if (stc > sedimentAmount) {
+		terrainHeight2 = terrainHeight - (ks * (stc - sedimentAmount));
+	} else {
+		terrainHeight2 = terrainHeight + (kd * (stc - sedimentAmount));
+	}
+	float terrainDif = terrainHeight - terrainHeight2;
+	terrainDif = clamp(terrainDif, -1.0, 0.00001);
+	float toReturn = terrainHeight - terrainDif;
+	toReturn = clamp(toReturn, -.3, 2.0);
+	return toReturn;
+	return terrainHeight2;
+}
+
+float updateSedimentAmount(float stc, float terrainHeight, float sedimentAmount)
+{
+
+	float sedimentAmount2;
+	if (stc > sedimentAmount) {
+		sedimentAmount2 = sedimentAmount + (ks * (stc - sedimentAmount));
+	} else {
+		sedimentAmount2 = sedimentAmount - (kd * (stc - sedimentAmount));
+	}
+	return sedimentAmount2;
+}
+
+void main()
+{
+	
+	vec2 texCoords = vec2(gl_FragCoord.x/screenWidth, gl_FragCoord.y/screenHeight);
+
+
+	vec4 prevSampleVal = texture(prevSample, texCoords, 0.0);
+	vec4 prevFluxVal = texture(prevFlux, texCoords, 0.0);
+	vec4 prevVelocityVal = texture(prevVelocity, texCoords, 0.0);
+
+	float waterHeight2 = prevSampleVal.x;
+	float terrainHeight1 = prevSampleVal.y;
+	float sedimentAmt1 = prevSampleVal.z;
+
+	vec2 prevVelocity = vec2(prevVelocityVal.x, prevVelocityVal.y);
+	float waterHeight1 = prevVelocityVal.z;
+
+	float stc = getSedimentTransportCapacity(prevVelocity, terrainHeight1, texCoords);
+	float terrainHeight2 = updateTerrainHeight(stc, terrainHeight1, sedimentAmt1);
+	float sedimentAmt2 = updateSedimentAmount(stc, terrainHeight1, sedimentAmt1);
+
+	endHeight = vec4(waterHeight2, terrainHeight2, sedimentAmt2, 1.0);
+
+	endFlux = prevFluxVal;
+
+	endVelocity = vec4(prevVelocity.x, prevVelocity.y, stc, 1.0);
+}

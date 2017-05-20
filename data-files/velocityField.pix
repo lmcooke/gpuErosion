@@ -1,0 +1,165 @@
+#version 330
+
+uniform vec2 bounds;
+
+uniform sampler2D prevSample;
+uniform sampler2D prevFlux;
+uniform sampler2D prevVelocity;
+
+uniform int gridSize;
+uniform int gridFaceNum;
+uniform float timeTick;
+
+uniform int screenHeight;
+uniform int screenWidth;
+
+// color attachment locations for output values
+layout(location = 1) out vec4 endHeight;
+layout(location = 2) out vec4 endFlux;
+layout(location = 3) out vec4 endVelocity;
+
+
+float getNeighboringFluxVals(vec2 texCoords)
+{
+	float gridFaceNumFl = float(gridFaceNum);
+	
+
+	float xIncr = 1.0/gridFaceNumFl;
+	float yIncr = 1.0/gridFaceNumFl;
+
+	// left going right
+	float left;
+	if (texCoords.x < xIncr) {
+		left = 0.0;
+	} else {
+		left = texture(prevFlux, vec2(texCoords.x - xIncr, texCoords.y), 0.0).y;
+	}
+
+	// right going left
+	float right;
+	if (texCoords.x > (1.0 - xIncr)) {
+		right = 0.0;
+	} else {
+		right = texture(prevFlux, vec2(texCoords.x + xIncr, texCoords.y), 0.0).x;
+	}
+
+	// top going down
+	float top;
+	if (texCoords.y < yIncr) {
+		top = 0.0;
+	} else {
+		top = texture(prevFlux, vec2(texCoords.x, texCoords.y - yIncr), 0.0).w;
+	}
+
+	// bottom going up
+	float bottom;
+	if (texCoords.y > (1.0 - yIncr)) {
+		bottom = 0.0;
+	} else {
+		bottom = texture(prevFlux, vec2(texCoords.x, texCoords.y + yIncr), 0.0).z;
+	}
+
+	float volumeChange = left + right + top + bottom;
+	return volumeChange;
+}
+
+float updateWaterHeight(float waterHeight, vec4 prevFluxVal, vec2 texCoords)
+{
+
+	float unitMultiplier = 1.0;
+	float vertexNumFl = float(gridFaceNum + 1);
+	float pipeLength = 1.0/vertexNumFl;
+	float pipeArea = pipeLength * pipeLength;
+
+	float inflow = getNeighboringFluxVals(texCoords);
+	float outflow = prevFluxVal.x + prevFluxVal.y + prevFluxVal.z + prevFluxVal.w;
+	float volumeChange = inflow - outflow;
+
+	
+	float pipeAreaConstant = 2.0;
+	return waterHeight + (volumeChange/pipeAreaConstant);
+}
+
+// update velocity vector based on new water and flux.
+vec2 updateVelocity(float water1, float water2, vec4 prevFluxVal, vec2 texCoords)
+{
+	float unitMultiplier = 5.0;
+	float pipeLength = 1.0/float(gridFaceNum + 1) * unitMultiplier;
+	float waterAve = (water1 + water2)/2.0;
+
+	// get X water movement
+	float gridFaceNumFl = float(gridFaceNum);
+	
+
+	float xIncr = 1.0 / gridFaceNumFl;
+	float yIncr = 1.0 / gridFaceNumFl;
+
+	// left going right
+	float left;
+	if (texCoords.x < xIncr) {
+		left = 0.0;
+	} else {
+		left = texture(prevFlux, vec2(texCoords.x - xIncr, texCoords.y), 0.0).y;
+	}
+
+	float right;
+	if (texCoords.x > (1.0 - xIncr)) {
+		right = 0.0;
+	} else {
+		right = texture(prevFlux, vec2(texCoords.x + xIncr, texCoords.y), 0.0).x;
+	}
+
+	
+	float xWaterMov = (left - prevFluxVal.x + prevFluxVal.y - right)/2.0;
+
+	// get y water movement
+
+	// top going down
+	float top;
+	if (texCoords.y < yIncr) {
+		top = 0.0;
+	} else {
+		top = texture(prevFlux, vec2(texCoords.x, texCoords.y - yIncr), 0.0).w;
+	}
+
+	float bottom;
+	if (texCoords.y > (1.0 - yIncr)) {
+		bottom = 0.0;
+	} else {
+		bottom = texture(prevFlux, vec2(texCoords.x, texCoords.y + yIncr), 0.0).z;
+	}
+
+	float yWaterMov = (top - prevFluxVal.z + prevFluxVal.w - bottom)/2.0;
+	
+
+	float u = xWaterMov/(pipeLength * waterAve);
+	float v = yWaterMov/(pipeLength * waterAve);
+	
+	float pLC = 1.5;
+	return vec2(xWaterMov * pLC, yWaterMov * pLC);
+}
+
+void main()
+{
+	
+	vec2 texCoords = vec2(gl_FragCoord.x/screenWidth, gl_FragCoord.y/screenHeight);
+
+
+	vec4 prevSampleVal = texture(prevSample, texCoords, 0.0);
+	vec4 prevFluxVal = texture(prevFlux, texCoords, 0.0);
+	vec4 prevVelocityVal = texture(prevVelocity, texCoords, 0.0);
+
+	float waterHeight1 = prevSampleVal.x;
+	float terrainHeight1 = prevSampleVal.y;
+	float sedimentAmt1 = prevSampleVal.z;
+
+	float updatedWater = updateWaterHeight(waterHeight1, prevFluxVal, texCoords);
+	vec2 velocity = updateVelocity(waterHeight1, updatedWater, prevFluxVal, texCoords);
+
+	endHeight = vec4(updatedWater, terrainHeight1, sedimentAmt1, 1.0);
+
+	endFlux = prevFluxVal;
+
+	// keep old water height in third position of velocity
+	endVelocity = vec4(velocity.x, velocity.y, waterHeight1, 1.0);
+}

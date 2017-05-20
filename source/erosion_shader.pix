@@ -1,0 +1,17 @@
+#version 410
+#include <g3dmath.glsl>
+#include <Texture/Texture.glsl>
+
+
+uniform mat4x3 cameraToWorldMatrix;
+uniform TextureCube environmentMap;
+
+// output
+out Radiance3 pixelColor;
+
+
+void main()
+{
+	//pixelColor = sampleTexture(environmentMap, Vector3(1.0, 0.0, 0.0)).rgb;
+	pixelColor = Radiance3(1.0, 1.0, 0.0);
+}

@@ -1,0 +1,26 @@
+#version 330
+in vec4 g3d_Vertex;
+in vec3 g3d_Normal;
+out vec3 normal;
+
+uniform vec2 bounds;
+uniform sampler2D texture1;
+uniform int gridSize;
+uniform float timeTick;
+
+void main() {
+	gl_Position = g3d_Vertex;
+
+	float gridSizeFl = float(gridSize);
+	vec2 texCoords = vec2((gl_Position[0] + (gridSizeFl * .5))/gridSizeFl,
+						(gl_Position[2] + (gridSizeFl * .5))/gridSizeFl);
+
+	float timeIncr = timeTick - floor(timeTick);
+
+	gl_Position = vec4(gl_Position[0], 
+						texture(texture1, texCoords, 0.0).x + timeIncr, 
+						gl_Position[2], 1.0);
+
+
+	normal = g3d_Normal;
+}

@@ -1,0 +1,68 @@
+#version 330
+#include <Texture/Texture.glsl>
+
+in vec4 g3d_Vertex;
+in vec3 g3d_Normal;
+out vec3 normal;
+out vec3 height;
+out vec3 erosionData;
+out vec4 fluxData;
+out vec4 velocityData;
+
+out vec3 wsInterpolatedEye;
+
+uniform vec2 bounds;
+uniform sampler2D terrainHeight; // terrain height
+uniform sampler2D waterHeight; // water height
+
+// textures from erosion calculation
+uniform sampler2D prevSample; // y value is most recent terrain height calculation
+uniform sampler2D prevFlux;
+uniform sampler2D prevVelocity;
+
+uniform int gridSize;
+uniform float timeTick;
+
+// uniforms for phong lighting
+uniform vec3 wsEyePosition;
+
+
+void main() 
+{
+	gl_Position = g3d_Vertex;
+
+	float gridSizeFl = float(gridSize);
+
+	vec2 texCoords = vec2((gl_Position[0] + (gridSizeFl * .5))/gridSizeFl,
+						(gl_Position[2] + (gridSizeFl * .5))/gridSizeFl);
+
+
+	vec4 sample1 = texture(terrainHeight, texCoords, 0.0);
+	vec4 sample2 = texture(waterHeight, texCoords, 0.0);
+
+	vec4 sample3 = texture(prevSample, texCoords, 0.0);
+
+	vec4 sample4 = texture(prevFlux, texCoords, 0.0);
+	vec4 sample5 = texture(prevVelocity, texCoords, 0.0);
+
+	if (timeTick < 16.0) {
+		gl_Position = vec4(gl_Position[0], 
+					sample1.x, 
+					gl_Position[2], 1.0);
+	} else {
+		
+		gl_Position = vec4(gl_Position[0], 
+					sample3.y, 
+					gl_Position[2], 1.0);
+	}
+	
+	erosionData = vec3(sample3.x, sample3.y, sample3.z);
+
+	fluxData = sample4;
+
+	velocityData = sample5;
+
+	normal = g3d_Normal;
+
+	wsInterpolatedEye = wsEyePosition - (g3d_ObjectToWorldMatrix * g3d_Vertex).xyz;
+}

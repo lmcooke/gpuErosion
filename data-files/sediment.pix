@@ -1,0 +1,71 @@
+#version 330
+
+uniform vec2 bounds;
+
+uniform sampler2D prevSample;
+uniform sampler2D prevFlux;
+uniform sampler2D prevVelocity;
+
+uniform int gridSize;
+uniform int gridFaceNum;
+uniform float timeTick;
+
+uniform int screenHeight;
+uniform int screenWidth;
+
+// color attachment locations for output values
+layout(location = 1) out vec4 endHeight;
+layout(location = 2) out vec4 endFlux;
+layout(location = 3) out vec4 endVelocity;
+
+
+float updateSediment(vec2 prevVelocity, vec2 texCoords)
+{
+	// adjust for scale dif between texture and land
+	float scaleMultiplier = .1;
+
+	float uVal = texCoords.x - (prevVelocity.x * scaleMultiplier);
+	float vVal = texCoords.y - (prevVelocity.y * scaleMultiplier);
+	
+	if (uVal < 0.0) {
+		uVal = 0.0;
+	}
+	if (uVal > 1.0) {
+		uVal = 1.0;
+	} 
+	if (vVal < 0.0) {
+		vVal = 0.0;
+	}
+	if (vVal > 1.0) {
+		vVal = 1.0;
+	}
+
+	float transportedSediment = texture(prevSample, vec2(uVal, vVal), 0.0).z;
+	return transportedSediment;
+
+}
+
+void main()
+{
+	
+	vec2 texCoords = vec2(gl_FragCoord.x/screenWidth, gl_FragCoord.y/screenHeight);
+
+
+	vec4 prevSampleVal = texture(prevSample, texCoords, 0.0);
+	vec4 prevFluxVal = texture(prevFlux, texCoords, 0.0);
+	vec4 prevVelocityVal = texture(prevVelocity, texCoords, 0.0);
+
+	float waterHeight1 = prevSampleVal.x;
+	float terrainHeight1 = prevSampleVal.y;
+	float sedimentAmt1 = prevSampleVal.z;
+	vec2 prevVelocity = vec2(prevVelocityVal.x, prevVelocityVal.y);
+
+	float sedimentAmt2 = updateSediment(prevVelocity, texCoords);
+
+	endHeight = vec4(waterHeight1, terrainHeight1, sedimentAmt2, 1.0);
+	
+
+	endFlux = prevFluxVal;
+
+	endVelocity = prevVelocityVal;
+}

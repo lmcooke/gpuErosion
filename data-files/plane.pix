@@ -1,0 +1,51 @@
+#version 330
+uniform float intensity;
+in vec3 faceColor;
+in vec3 erosionData_final;
+in vec4 fluxData_final;
+in vec4 velocityData_final;
+
+// visualization uniforms
+uniform int useWaterColor;
+uniform int useSedimentColor;
+uniform int useFluxColor;
+uniform int useVelocityColor;
+
+
+layout(location = 0) out vec4 result;
+
+void main() {
+
+
+	float sedimentThreshold = .001;
+	float waterThreshold = .01;
+
+
+	vec3 adjustedColor = faceColor;
+	
+
+	if (useWaterColor == 1) {
+		if (adjustedColor.x > waterThreshold) {
+			adjustedColor = mix(faceColor, vec3(0.0,0.0,1.0), erosionData_final.x);
+		}
+	}
+	if (useSedimentColor == 1) {
+		adjustedColor = mix(adjustedColor, vec3(1.0,0.0,0.0), erosionData_final.z);
+		
+	}
+
+	if (useFluxColor == 1) {
+		float fluxVizScalar = clamp(fluxData_final.x * 250.0, 0.0, 1.0);
+		adjustedColor = mix(adjustedColor, vec3(0.0, 1.0, 0.0), fluxVizScalar);
+	}
+
+	if (useVelocityColor == 1) {
+		adjustedColor = mix(adjustedColor, vec3(0.0, 1.0, 0.0), velocityData_final.x * 100.0);
+	}
+
+
+
+
+	result = vec4(adjustedColor, 1.0);
+	
+}

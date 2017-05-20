@@ -1,0 +1,150 @@
+                  <meta charset="utf-8">
+                 **Erosion Report**
+
+
+![Eroding a cylinder](2017-02-17_024_erosion_g3d_r1069__Time_3.jpg)
+
+
+Erosion Program Introduction
+=====================================================
+
+This program creates an erosion simulation based on a terrain map and a water map. This data is loaded into a shader on the GPU, where multiple framebuffers and shaders compute an erosion simulation in real time. The results are seen as displacement on a plane using a vertex shader. The user has a the choice
+
+In order to use the program, run 'icompile --run' from the project directory. In order to change the input water and terrain maps or the grid size or resolution, one can change the values at the top of App.cpp. Sample terrain maps have been included in different heightmap directories that can be found in image/.
+
+Upon running, a window will open where user can view and move around a plane which will immediately begin to erode. The user can also choose to view the water (blue), flux (green), sediment (red), or velocity (green) using the GUI. Additionally, the user can choose three constants that effect the erosion: the sediment capacity constant (kc), a dissolving constant (ks), and a deposition constant (kd). Changing these constants will immediately effect the erosion. The default values for these sliders work well enough that nothing should be need to change dramatically.
+
+The user can also choose a water source: rain, river, both, or none. The river causes water to generate at a constant rate in the center of the mesh. Rain causes a random amount of water to generate. Both options used together will create a dramatic erosion (depending on additional settings also). Using just rain causes very little erosion, but it is still interesting to see the water dry up. Using neither water option will either cause nothing to happen (if there is no water to begin with on the terrain), or very little erosion depending on the water specified by the input terrain map.
+
+For best results, use the heightmaps in the heightMap2 directory, a grid-size of 4, a resolution of 150, and leave the erosion constants as their original values. HeightMap1 with the same settings works well also.
+
+For this project, I talked with Kenji and Nellie about framebuffer/shader design, and Kenji helped me with making my GUI look fancy(ish).
+
+Specification
+=====================================================
+
+1.) Features: At top of App.cpp, the user can choose their input files for height and water maps, and choose the size and resolution of their plane. Upon running the program, the user will see the original terrain heights on the plane briefly before the erosion starts. The user can move the camera using the Q,W,E,A,S,D,Z,C keys. The erosion will continue until no further erosion can take place, which usually means it will end close to being a flat plane. Sample water and terrain maps are included in data-files/image/. The user can also choose to view the water (blue), flux (green), sediment (red), or velocity (green) using the GUI. Additionally, the user can choose three constants that effect the erosion: the sediment capacity constant (kc), a dissolving constant (ks), and a deposition constant (kd). The default values for these sliders work well enough that nothing should be need to change dramatically. Lastly, the user can choose a water source -- rain, river, both, or none.
+
+2.) Specific Entry Points: App::onInit initializes the program and makes the necessary framebuffers, textures, and grid. At every 'tick', App::onGraphics3D is called, which alternates rendering between two framebuffers to compute the erosion on a texture using the shaders in the following order: waterIncrement, outflowFlux, velocityField, erosion, sediment, evaporation. Finally, these results are rendered onto the grid using the plane.* shader and a separate framebuffer.
+
+3.) Output Files: a model file data-files/model/plane.off is created upon initialization. This is a simple flat plane mesh on which the simulation will take place.
+
+4.) Results: see 'Results'.
+
+Topic Overview
+=====================================================
+
+The erosion simulation in this project is based on the paper 'Fast Hydraulic Erosion Simulation and Visualization on GPU' by Xing Mei, Philippe Decaudin, and Bao-Gang Hu. Given a terrain heights, water heights, and the amount of sediment on a plane, one can compute how the terrain will erode over time. This erosion takes place in six steps (and this project uses a separate shader for each of these six steps).
+
+First, water levels are incremented due to either rainfall or a river source. In this project, I have specified a river source as a square on the plane where a small but constant amount of water is incremented.
+
+Second, we compute how much water is flowing throughout the plane. This takes into account the terrain and water heights of adjacent cells, and computes how much water is traveling out of each cell in each direction.
+
+Third, we update the water levels based on the new water flow. We can also then compute the velocity of the water.
+
+Fourth, based on the local angle tilt of each cell and its water velocity, we update the amount of sediment and thus also terrain heights. These calculations include a number of constant values describing the plane's sediment capacity, dissolving abilities, and deposition.
+
+Fifth, we compute how the sediment has traveled under the new conditions on the plane since the terrain heights have been changed.
+
+Lastly, we decrease the amount of water because of evaporation.
+
+After these six steps, we can see how much the terrain has eroded within a given amount of time -- we can call this one 'pass'. We can accumulate these results using the final terrain, water, and sediment amounts from the previous pass as starting values in the next pass.
+
+Additionally, because each of the six steps only requires data from the previous step, and each cell only samples from its own values and its previous values, this simulation is well suited for an implementation on the GPU.
+
+
+
+Design
+=====================================================
+
+The bulk of this project is takes place in seven different shaders. There is relatively C++ code, which all takes place in App.cpp. On the CPU side, the design of this project uses three framebuffers: prevFBO, nextFBO, and m_framebuffer. The first two FBOs each have three color attachments. This is because the data that needs to be passed between different shaders is the water height, terrain height, sediment amount, flux.left, flux.right, flux.top, flux.bottom, velocity.u, velocity.v, which requires a minimum of three textures with four channels each.
+
+Each time App::onGraphics3D is called, each of the six shader steps is computed by alternating between binding to the prevFBO and nextFBO and rendering to a fullscreen squad (which is never rendered to screen). The results of each shader compution is written out to a different color attachment, which is then used as an input to the next shading computation. At the end of App::onGraphics3D, after all six shaders have been computed, m_framebuffer is bound and uses the final shader computation as its input. This final framebuffer only renders results to the grid for visualization purposes. It does no computation that is saved and used elsewhere.
+
+Because each of the six erosion steps maps directly to a shader, the design of each shader is quite simple. Each shader has a small task which is accomplished using a number of helper functions, and the results are written out as color attachments for use in the next shader.
+
+
+Results
+=====================================================
+
+Here are results from heightmap2 with a resolution of 150, using a river, and default constants:
+
+![Time 1 (showing water and flux)](2017-02-17_011_erosion_g3d_r1069__Erosion_Process_with_Water_and_Flux_Shown.jpg)
+
+![Time 2 (showing water and flux)](2017-02-17_012_erosion_g3d_r1069__Erosion_with_Flux_and_Water_Shown.jpg)
+
+![Time 3 (showing water, flux, and sediment)](2017-02-17_013_erosion_g3d_r1069__Erosion_with_water_flux_and_sediment_shown.jpg)
+
+![Time 3 (showing water, flux, and sediment)](2017-02-17_014_erosion_g3d_r1069__Erosion_with_water_Flux_and_Sediment_shown.jpg)
+
+Notice how the erosion primarily occurs at the base of the hills, since these regions are directly adjacent to the river.
+
+
+Here are results from heightmap3 with a resolution of 150, using a river, and adjusting ks to .01:
+
+![Time 1](2017-02-17_015_erosion_g3d_r1069__Time_1.jpg)
+
+![Time 2 (water and flux shown)](2017-02-17_016_erosion_g3d_r1069__Time_2__water_and_flux_shown_.jpg)
+
+![Time 3 (water, flux, and sediment shown)](2017-02-17_017_erosion_g3d_r1069__Time_3__water__flux__and_sediment_shown_.jpg)
+
+![Time 4 (with water, flux, and sediment shown)](2017-02-17_018_erosion_g3d_r1069__Time_4__with_water__flux__and_sediment_shown_.jpg)
+
+![Time 5 (with water, flux, sediment shown)](2017-02-17_019_erosion_g3d_r1069__Time_5__with_water__flux__sediment_shown_.jpg)
+
+![Time 6 (with water and flux shown)](2017-02-17_020_erosion_g3d_r1069__Time_6__with_water_and_flux_shown_.jpg)
+
+![Time 7](2017-02-17_021_erosion_g3d_r1069__Time_7.jpg)
+
+The criss-crossed dents through the center are due to the original water heights. The river erodes the space it is in, and begins to effect the terrain around it, based on the constants used.
+
+
+Here are results from heightMap1 with a resolution of 150, using a river, and default constants:
+
+![Time 1](2017-02-17_022_erosion_g3d_r1069__Time_1.jpg)
+
+![Time 2](2017-02-17_023_erosion_g3d_r1069__Time_2.jpg)
+
+![Time 3](2017-02-17_024_erosion_g3d_r1069__Time_3.jpg)
+
+![Time 4](2017-02-17_025_erosion_g3d_r1069__Time_5.jpg)
+
+
+
+Self Evaluation
+=====================================================
+
+Far and away the most difficult part of this project involved setting up the framebuffer/shader/color attachment pipeline on the GPU. In the end, I think the framebuffer/shader ping-ponging design makes sense and is probably the main thing that I got out of this project.
+
+The simulation itself looks pretty accurate if you leave the default settings, and I closely followed the computations recommended in the paper. However, the results depend heavily on the height maps, the resolution, the constants used in computation, and the amount of water being added to the scene.
+
+If I had more time, I would've focused on how water is incremented into the scene. Right now, the user can control either a river or rain, but both simply generate water in a large constant square. The current model is good enough for the scope of this project, and it allows you to see how things errode arround it, but it isn't super realistic.
+
+Schedule
+=====================================================
+
+2/10: Fully understand erosion process as specified in the paper.
+
+2/13: Have multiple shaders ping-ponging on GPU.
+
+2/15: Have full shader/framebuffer/color attachment pipeline set up.
+
+2/15-1/17: Tweak simulation settings.
+
+Change Log
+=====================================================
+
+1. One FBO that does shader computation and renders to plane mesh.
+
+2. Two FBOs that ping pong back and forth. Cram simulation computation into one shader.
+
+3. Two FBOs that ping pong back and forth. One shader does simulation, one renders to plane.
+
+4. Two FBOs that ping pong back and forth. Six shaders do simulation, one renders to plane using additional FBO.
+
+
+
+
+
+<!-- Markdeep: -->
+<style class="fallback">body{visibility:hidden;white-space:pre;font-family:monospace;}</style><script src="https://casual-effects.com/markdeep/latest/markdeep.min.js"></script><script>window.alreadyProcessedMarkdeep||(document.body.style.visibility="visible")</script>

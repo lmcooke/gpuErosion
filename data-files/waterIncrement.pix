@@ -1,0 +1,108 @@
+#version 330
+
+uniform vec2 bounds;
+uniform sampler2D terrainHeight;
+uniform sampler2D waterHeight;
+
+uniform sampler2D prevSample;
+uniform sampler2D prevFlux;
+uniform sampler2D prevVelocity;
+
+uniform int gridSize;
+uniform int gridFaceNum;
+uniform float timeTick;
+
+uniform int screenHeight;
+uniform int screenWidth;
+
+// water input settings
+uniform int useRiver;
+uniform int useRain;
+
+// color attachment locations for output values
+layout(location = 1) out vec4 endHeight;
+layout(location = 2) out vec4 endFlux;
+layout(location = 3) out vec4 endVelocity;
+
+// generate a pseudo-random value between 0.0 and 1.0
+float randVal(vec2 seed) {
+	return fract(sin(dot(seed.xy, vec2(12.9898, 78.233))) * 43758.543);
+}
+
+// increments the water either by river or rain or both or none.
+// This method is really easy to change if a different river origin, or amount of rain
+// is needed.
+float incrWaterHeight(float origWaterHeight, vec2 texCoords)
+{
+
+	float waterIncr = 0.0;
+
+	if (useRiver == 1) {
+		// river source constant square x,y .25 <-> .75:
+		if (texCoords.x > .25 && texCoords.x < .75 && 
+			texCoords.y > .25 && texCoords.y < .75) {
+			// water is incremented in this area
+			waterIncr = waterIncr + .001;
+		}
+	}
+
+	if (useRain == 1) {
+		// replace with following for random rainfall within constant square
+		float rand1 = randVal(texCoords);
+		float rand2 = randVal(vec2(timeTick));
+
+		float rainAmt;
+		if (randVal(vec2(rand1, rand2)) > .99 &&
+			texCoords.x > .15 && 
+			texCoords.x < .45 &&
+			texCoords.y > .35 && 
+			texCoords.y < .65) {
+
+			rainAmt = rand1 * rand2 * .001;
+			waterIncr = waterIncr + clamp(rainAmt, .001, 0.0);
+		} 
+	}
+	
+	return origWaterHeight + waterIncr;
+
+}
+
+void main()
+{
+	
+	vec2 texCoords = vec2(gl_FragCoord.x/screenWidth, gl_FragCoord.y/screenHeight);
+
+	if (timeTick < 16.0) { // initialize maps at start
+
+		float initialTerrainHeight = texture(terrainHeight, texCoords, 0.0).x;
+		float initialWaterHeight = texture(waterHeight, texCoords, 0.0).x;
+		float initialSedimentAmt = 0.0;
+
+		endHeight = vec4(initialWaterHeight, initialTerrainHeight, initialSedimentAmt, 1.0);
+
+		// flux starts at 0
+		endFlux = vec4(0.0);
+		endVelocity = vec4(0.1);
+		
+	} else { // only start incrementing after we know all input textures are non-null
+		
+
+		vec4 prevSampleVal = texture(prevSample, texCoords, 0.0);
+		vec4 prevFluxVal = texture(prevFlux, texCoords, 0.0);
+		vec4 prevVelocityVal = texture(prevVelocity, texCoords, 0.0);
+
+		float waterHeight1 = prevSampleVal.x;
+		float terrainHeight1 = prevSampleVal.y;
+		float sedimentAmt1 = prevSampleVal.z;
+
+		// increment water height
+		float waterHeight2 = incrWaterHeight(waterHeight1, texCoords);
+
+		endHeight = vec4(waterHeight2, terrainHeight1, sedimentAmt1, 1.0);
+
+		endFlux = prevFluxVal;
+
+		endVelocity = prevVelocityVal;
+	}
+
+}

@@ -1,0 +1,55 @@
+#version 330
+
+uniform vec2 bounds;
+
+uniform sampler2D prevSample;
+uniform sampler2D prevFlux;
+uniform sampler2D prevVelocity;
+
+uniform int gridSize;
+uniform int gridFaceNum;
+uniform float timeTick;
+
+uniform int screenHeight;
+uniform int screenWidth;
+
+// color attachment locations for output values
+layout(location = 1) out vec4 endHeight;
+layout(location = 2) out vec4 endFlux;
+layout(location = 3) out vec4 endVelocity;
+
+
+float updateWaterHeight(float waterHeight)
+{
+	// evaporation constant
+	float ke = 0.5;
+
+	float waterHt2 = waterHeight * (1.0 - ke);
+	return waterHt2;
+}
+
+void main()
+{
+	
+	vec2 texCoords = vec2(gl_FragCoord.x/screenWidth, gl_FragCoord.y/screenHeight);
+
+
+	vec4 prevSampleVal = texture(prevSample, texCoords, 0.0);
+	vec4 prevFluxVal = texture(prevFlux, texCoords, 0.0);
+	vec4 prevVelocityVal = texture(prevVelocity, texCoords, 0.0);
+
+	float waterHeight1 = prevSampleVal.x;
+	float terrainHeight1 = prevSampleVal.y;
+	float sedimentAmt1 = prevSampleVal.z;
+
+	float waterHeight2 = updateWaterHeight(waterHeight1);
+
+	// endHeight = vec4(waterHeight2, terrainHeight1, sedimentAmt1, prevSampleVal.w); 
+
+	
+	endHeight = vec4(waterHeight1, terrainHeight1, sedimentAmt1, 1.0);
+
+	endFlux = prevFluxVal;
+
+	endVelocity = prevVelocityVal;
+}

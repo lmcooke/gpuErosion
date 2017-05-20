@@ -1,0 +1,189 @@
+#version 330
+
+uniform vec2 bounds;
+
+uniform sampler2D prevSample;
+uniform sampler2D prevFlux;
+uniform sampler2D prevVelocity;
+
+uniform int gridSize;
+uniform int gridFaceNum;
+uniform float timeTick;
+
+uniform int screenHeight;
+uniform int screenWidth;
+
+// color attachment locations for output values
+layout(location = 1) out vec4 endHeight;
+layout(location = 2) out vec4 endFlux;
+layout(location = 3) out vec4 endVelocity;
+
+
+// returns a vec4 of neighboring heights (L,R,T,B)
+vec4 getNeighboringTerrainHeights(vec2 texCoords)
+{
+	float gridFaceNumFl = float(gridFaceNum);
+	// float screenWfl = float(screenWidth);
+
+	float xIncr = 1.0 / gridFaceNumFl;
+	float yIncr = 1.0 / gridFaceNumFl;
+
+	float left;
+	if (texCoords.x < xIncr) {
+		left = texture(prevSample, texCoords, 0.0).y;
+	} else {
+		left = texture(prevSample, vec2(texCoords.x - xIncr, texCoords.y), 0.0).y;
+	}
+
+	float right;
+	if (texCoords.x > (1.0 - xIncr)) {
+		right = texture(prevSample, texCoords, 0.0).y;
+	} else {
+		right = texture(prevSample, vec2(texCoords.x + xIncr, texCoords.y), 0.0).y;
+	}
+
+	float top;
+	if (texCoords.y < yIncr) {
+		top = texture(prevSample, texCoords, 0.0).y;
+	} else {
+		top = texture(prevSample, vec2(texCoords.x, texCoords.y - yIncr), 0.0).y;
+	}
+
+	float bottom;
+	if (texCoords.y > (1.0 - yIncr)) {
+		bottom = texture(prevSample, texCoords, 0.0).y;
+	} else {
+		bottom = texture(prevSample, vec2(texCoords.x, texCoords.y + yIncr), 0.0).y;
+	}
+
+	return vec4(left, right, top, bottom);
+}
+
+// returns a vec4 of neighboring heights (L,R,T,B)
+vec4 getNeighboringWaterHeights(vec2 texCoords)
+{
+	float epsilon = 0.0;
+
+	float gridFaceNumFl = float(gridFaceNum);
+	// float screenWfl = float(screenWidth);
+
+	float xIncr = (1.0 / gridFaceNumFl) + epsilon;
+	float yIncr = (1.0 / gridFaceNumFl) + epsilon;
+
+	float left;
+	if (texCoords.x < xIncr) {
+		left = texture(prevSample, texCoords, 0.0).x;
+	} else {
+		left = texture(prevSample, vec2(texCoords.x - xIncr, texCoords.y), 0.0).x;
+	}
+
+	float right;
+	if (texCoords.x > (1.0 - xIncr)) {
+		right = texture(prevSample, texCoords, 0.0).x;
+	} else {
+		right = texture(prevSample, vec2(texCoords.x + xIncr, texCoords.y), 0.0).x;
+	}
+
+	float top;
+	if (texCoords.y < yIncr) {
+		top = texture(prevSample, texCoords, 0.0).x;
+	} else {
+		top = texture(prevSample, vec2(texCoords.x, texCoords.y - yIncr), 0.0).x;
+	}
+
+	float bottom;
+	if (texCoords.y > (1.0 - yIncr)) {
+		bottom = texture(prevSample, texCoords, 0.0).x;
+	} else {
+		bottom = texture(prevSample, vec2(texCoords.x, texCoords.y + yIncr), 0.0).x;
+	}
+
+	return vec4(left, right, top, bottom);
+}
+
+// returns height difference as vec4(L, R, T, B) for current cell and its neighbors height.
+vec4 getHeightDif(vec4 neighborTerrainHeights, vec4 neighborWaterHeights, 
+					float terrainHeight, float waterHeight)
+{
+	
+	float currentCellHeight = terrainHeight + waterHeight;
+
+
+	// get left heightDif
+	float leftDif = currentCellHeight - (neighborTerrainHeights.x + neighborWaterHeights.x);
+
+	float rightDif = currentCellHeight - (neighborTerrainHeights.y + neighborWaterHeights.y);
+
+	float topDif = currentCellHeight - (neighborTerrainHeights.z + neighborWaterHeights.z);
+
+	float bottomDif = currentCellHeight - (neighborTerrainHeights.w + neighborWaterHeights.w);
+
+	return vec4(leftDif, rightDif, topDif, bottomDif);
+
+}
+
+// updates the flux and puts values in to a vec4(L,R,T,B)
+vec4 updateFlux(vec4 prevFlux, vec2 texCoords, float terrainHeight, float waterHeight)
+{
+
+	// convert face number measurement to meters
+	float unitMultiplier = 5.0;
+
+	float pipeLength = (1.0/float(gridFaceNum + 1)) * unitMultiplier;
+	float pipeArea = pipeLength * pipeLength;
+	float gravity = 9.8;
+	
+
+
+	vec4 neighboringTerrainHeights = getNeighboringTerrainHeights(texCoords);
+	vec4 neighboringWaterHeights = getNeighboringWaterHeights(texCoords);
+
+	vec4 heightDif = getHeightDif(neighboringTerrainHeights, neighboringWaterHeights, 
+								terrainHeight, waterHeight);
+	
+	
+	// adjust following lines to change flow amount and accumulation
+	float fluxL = max(0.0, prevFlux.x + (pipeArea * ((gravity * heightDif.x)/pipeLength)));
+	float fluxR = max(0.0, prevFlux.y + (pipeArea * ((gravity * heightDif.y)/pipeLength)));
+	float fluxT = max(0.0, prevFlux.z + (pipeArea * ((gravity * heightDif.z)/pipeLength)));
+	float fluxB = max(0.0, prevFlux.w + (pipeArea * ((gravity * heightDif.w)/pipeLength)));
+
+	float scaleComp;
+	float fluxSum = fluxL + fluxR + fluxT + fluxB;
+	if (fluxSum == 0.0) {
+		scaleComp = 1;
+	} else {
+		scaleComp = (waterHeight * pipeLength * pipeLength)/fluxSum;
+	}
+
+	float scaleK = min(1.0, scaleComp);
+	fluxL = clamp(fluxL * scaleK, 0.0, .3);
+	fluxR = clamp(fluxR * scaleK, 0.0, .3);
+	fluxT = clamp(fluxT * scaleK, 0.0, .3);
+	fluxB = clamp(fluxB * scaleK, 0.0, .3);
+
+	return vec4(fluxL, fluxR, fluxT, fluxB);
+
+}
+
+void main()
+{
+	
+	vec2 texCoords = vec2(gl_FragCoord.x/screenWidth, gl_FragCoord.y/screenHeight);
+
+
+	vec4 prevSampleVal = texture(prevSample, texCoords, 0.0);
+	vec4 prevFluxVal = texture(prevFlux, texCoords, 0.0);
+	vec4 prevVelocityVal = texture(prevVelocity, texCoords, 0.0);
+
+	float waterHeight1 = prevSampleVal.x;
+	float terrainHeight1 = prevSampleVal.y;
+	float sedimentAmt1 = prevSampleVal.z;
+
+	endHeight = vec4(waterHeight1, terrainHeight1, sedimentAmt1, 1.0);
+
+	endFlux = updateFlux(prevFluxVal, texCoords, terrainHeight1, waterHeight1);
+	
+
+	endVelocity = prevVelocityVal;
+}
